@@ -75,7 +75,7 @@ npm install
 # 3. 安装、启动、验证
 node src/cli.mjs install
 node src/cli.mjs start
-node src/cli.mjs doctor    # 六项必须全部 ok
+node src/cli.mjs doctor    # 七项必须全部 ok（含原生字段探针）
 
 # 4. 跑测试
 npm test
