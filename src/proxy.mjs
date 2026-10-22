@@ -1,5 +1,8 @@
 import http from "node:http";
 import { createRequire } from "node:module";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import {
   createCipheriv,
   createDecipheriv,
@@ -330,7 +333,31 @@ function normalizeToolCallReplay(items) {
   return result;
 }
 
-export function buildDeepSeekBody(input, { compactionSecret = "" } = {}) {
+// The portable adapter only understands the portable subset of the Responses
+// request. Anything else is answered with a fake 503 ("Endpoint is
+// unavailable"), so the router works from an allowlist: content fields DeepSeek
+// really consumes stay, every control/metadata field is dropped before the body
+// leaves. Unknown fields are logged rather than dropped silently, so a future
+// content-bearing Codex field cannot disappear without a trace.
+const DEEPSEEK_ALLOWED_FIELDS = new Set([
+  "model",
+  "input",
+  "instructions",
+  "tools",
+  "tool_choice",
+  "parallel_tool_calls",
+  "reasoning",
+  "text",
+  "stream",
+  "store",
+  "include",
+  "prompt_cache_key",
+  "max_output_tokens",
+  "temperature",
+  "top_p",
+]);
+
+export function buildDeepSeekBody(input, { compactionSecret = "", logger } = {}) {
   const body = structuredClone(input);
   const model = deepSeekModelFor(body.model);
   if (!model) throw new Error(`Unsupported DeepSeek model: ${body.model}`);
@@ -359,10 +386,16 @@ export function buildDeepSeekBody(input, { compactionSecret = "" } = {}) {
   delete body.safety_identifier;
   delete body.background;
   delete body.metadata;
+  delete body.client_metadata;
   delete body.service_tier;
   // DeepSeek emits parallel tool calls but cannot accept the resulting turn back,
   // so keep the shape out of the history in the first place.
   body.parallel_tool_calls = false;
+  for (const key of Object.keys(body)) {
+    if (DEEPSEEK_ALLOWED_FIELDS.has(key)) continue;
+    logger?.warn?.(`dropped request field the portable adapter does not accept: ${key}`);
+    delete body[key];
+  }
   if (Array.isArray(body.input)) {
     body.input = normalizeToolCallReplay(
       body.input
@@ -377,8 +410,8 @@ function isCompactionRequest(body) {
   return Array.isArray(body?.input) && body.input.some((item) => item?.type === "compaction_trigger");
 }
 
-function buildDeepSeekCompactionBody(input, compactionSecret) {
-  const body = buildDeepSeekBody(input, { compactionSecret });
+function buildDeepSeekCompactionBody(input, compactionSecret, logger) {
+  const body = buildDeepSeekBody(input, { compactionSecret, logger });
   body.input = (Array.isArray(body.input) ? body.input : [])
     .filter((item) => item?.type !== "compaction_trigger");
   body.input.push({
@@ -390,6 +423,38 @@ function buildDeepSeekCompactionBody(input, compactionSecret) {
   delete body.tool_choice;
   delete body.parallel_tool_calls;
   return body;
+}
+
+const MAX_FAILED_BODY_BYTES = 8 * 1024 * 1024;
+
+// The gateway answers a rejected request with a generic status (the OpenCode Go
+// adapter hides schema failures behind a 503), so the only useful evidence is
+// what the router itself sent. Keep the last failing body next to the router
+// config: mode 0600, capped, rotated by overwrite.
+function saveFailedRequestBody({ outgoingBody, pathname, status }) {
+  if (!Buffer.isBuffer(outgoingBody) || outgoingBody.length === 0) return "";
+  if (outgoingBody.length > MAX_FAILED_BODY_BYTES) return "";
+  let parsed;
+  try {
+    parsed = JSON.parse(outgoingBody.toString("utf8"));
+  } catch {
+    return "";
+  }
+  const directory = process.env.DSCODEX_FAILED_BODY_DIR?.trim()
+    || join(process.env.CODEX_HOME?.trim() || join(homedir(), ".codex"), "dscodex");
+  const file = join(directory, "failed-request.json");
+  try {
+    mkdirSync(directory, { recursive: true, mode: 0o700 });
+    writeFileSync(file, `${JSON.stringify({
+      savedAt: new Date().toISOString(),
+      path: pathname,
+      upstreamStatus: status,
+      body: parsed,
+    }, null, 2)}\n`, { mode: 0o600 });
+    return file;
+  } catch {
+    return "";
+  }
 }
 
 function textFromMessage(item) {
@@ -798,8 +863,8 @@ export function createProxyServer({
       let rewrittenBody = false;
       if (deepSeek) {
         const body = compactionRequest
-          ? buildDeepSeekCompactionBody(parsed, routerToken)
-          : buildDeepSeekBody(parsed, { compactionSecret: routerToken });
+          ? buildDeepSeekCompactionBody(parsed, routerToken, logger)
+          : buildDeepSeekBody(parsed, { compactionSecret: routerToken, logger });
         outgoingBody = Buffer.from(JSON.stringify(body));
         rewrittenBody = true;
       } else {
@@ -894,6 +959,10 @@ export function createProxyServer({
           logger.info?.(`upstream ${upstream.status} body: ${detail}`);
         } catch (error) {
           logger.info?.(`upstream ${upstream.status} body unreadable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+        if (deepSeek) {
+          const saved = saveFailedRequestBody({ outgoingBody, pathname, status: upstream.status });
+          if (saved) logger.info?.(`failed DeepSeek request body saved to ${saved}`);
         }
       }
       if (!upstream.body) {

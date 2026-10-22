@@ -3,6 +3,9 @@ import http from "node:http";
 import net from "node:net";
 import test from "node:test";
 import { once } from "node:events";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { gzipSync, zstdCompressSync } from "node:zlib";
 import { WebSocket, WebSocketServer } from "ws";
 import { buildDeepSeekBody, compactImagesToBudget, createProxyServer } from "../src/proxy.mjs";
@@ -82,6 +85,12 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
       access_programs: [],
       truncation: "auto",
       safety_identifier: "user_test",
+      client_metadata: { turn: "t1" },
+      future_native_field: { nested: true },
+      include: ["reasoning.encrypted_content"],
+      prompt_cache_key: "cache-key",
+      text: { verbosity: "medium" },
+      max_output_tokens: 2048,
       input: [
         { id: "msg_1", type: "agent_message", content: "prior answer" },
         { id: "call_1", type: "function_call_output", call_id: "call_7", output: "done" },
@@ -111,9 +120,63 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
     assert.equal("truncation" in request.body, false);
     assert.equal("safety_identifier" in request.body, false);
     assert.equal("metadata" in request.body, false);
+    assert.equal("client_metadata" in request.body, false);
+    // The allowlist also drops fields this router has never seen, so a future
+    // Codex release cannot reintroduce the fake 503 by adding one.
+    assert.equal("future_native_field" in request.body, false);
+    // Content-bearing fields must survive the allowlist untouched.
+    assert.deepEqual(request.body.include, ["reasoning.encrypted_content"]);
+    assert.equal(request.body.prompt_cache_key, "cache-key");
+    assert.deepEqual(request.body.text, { verbosity: "medium" });
+    assert.equal(request.body.max_output_tokens, 2048);
+    assert.equal(request.body.stream, true);
     assert.deepEqual(request.body.input[0], { type: "message", role: "user", content: "prior answer" });
     assert.deepEqual(request.body.input[1], { type: "function_call_output", call_id: "call_7", output: "done" });
   }
+});
+
+test("saves the outgoing DeepSeek body when the upstream rejects it", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "dscodex-failed-"));
+  process.env.DSCODEX_FAILED_BODY_DIR = directory;
+  t.after(() => {
+    delete process.env.DSCODEX_FAILED_BODY_DIR;
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const upstream = http.createServer(async (request, response) => {
+    await bodyOf(request);
+    response.writeHead(503, { "content-type": "application/json" });
+    response.end('{"error":{"type":"server_error","message":"Endpoint is unavailable."}}');
+  });
+  const upstreamUrl = await listen(upstream);
+  const proxy = createProxyServer({
+    deepSeekKey: "test-key",
+    deepSeekBaseUrl: upstreamUrl,
+    chatGptBaseUrl: upstreamUrl,
+    logger: { info() {}, error() {}, warn() {} },
+    routerToken: ROUTER_TOKEN,
+  });
+  const proxyUrl = await listen(proxy);
+  t.after(async () => { await close(proxy); await close(upstream); });
+
+  const response = await fetch(route(proxyUrl), {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: "Bearer client-token" },
+    body: JSON.stringify({
+      model: "deepseek/deepseek-v4.1-flash",
+      stream: true,
+      stream_options: { include_usage: true },
+      access_programs: [],
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hello" }] }],
+    }),
+  });
+  assert.equal(response.status, 503);
+  await response.arrayBuffer();
+
+  const saved = JSON.parse(readFileSync(join(directory, "failed-request.json"), "utf8"));
+  assert.equal(saved.upstreamStatus, 503);
+  assert.equal(saved.body.model, "deepseek-v4.1-flash");
+  assert.equal("stream_options" in saved.body, false);
+  assert.equal("access_programs" in saved.body, false);
 });
 
 test("forwards an inter-agent task message as text instead of an encrypted_content block", async (t) => {

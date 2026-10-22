@@ -1183,11 +1183,44 @@ async function manageProxy(subcommand, args, paths, port) {
   throw new Error(`Unknown proxy subcommand: ${subcommand}`);
 }
 
+// Codex adds native-Responses-only fields with every release, and the OpenCode
+// Go adapter answers those with a fake 503. A live probe with today's field
+// shape catches the regression at `doctor` time instead of mid-conversation.
+async function nativeFieldsProbe(port, routerToken) {
+  if (!routerToken) return { ok: false, detail: "router token missing" };
+  const body = {
+    model: "deepseek/deepseek-v4.1-flash",
+    stream: false,
+    store: false,
+    input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "doctor probe" }] }],
+    stream_options: { include_usage: true },
+    previous_response_id: "resp_doctor",
+    access_programs: [],
+    truncation: "auto",
+    safety_identifier: "dscodex-doctor",
+    service_tier: "default",
+  };
+  try {
+    const response = await fetch(`http://${HOST}:${port}/${routerToken}/v1/responses`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(45_000),
+    });
+    const text = await response.text();
+    if (response.ok) return { ok: true, detail: "200" };
+    return { ok: false, detail: `${response.status} ${text.replace(/\s+/g, " ").slice(0, 200)}` };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 async function doctor(port) {
   const { paths } = runtime();
   const config = existsSync(paths.config) ? readFileSync(paths.config, "utf8") : "";
   const routerToken = readRouterToken(paths.keyFile);
   const ready = await health(port, routerToken);
+  const probe = ready ? await nativeFieldsProbe(port, routerToken) : { ok: false, detail: "router not running" };
   const checks = {
     config_injected: Boolean(routerToken) && managedRouterConfigMatches(config, {
       port,
@@ -1198,12 +1231,16 @@ async function doctor(port) {
     router_token_present: Boolean(routerToken),
     proxy_running: Boolean(ready),
     deepseek_key_in_proxy: Boolean(ready?.deepseek_key),
+    // One live request carrying the native fields Codex sends (plus the ones it
+    // used to send) proves the router still strips them before the gateway.
+    native_fields_roundtrip: probe.ok,
     // The app-server bridge is macOS-only and opt-in. The check passes when
     // the bridge is cleanly disabled (no DSCodex-owned CODEX_CLI_PATH) or
     // fully functional (shim present and the stock Codex binary resolvable).
     app_server_bridge: process.platform !== "darwin" || bridgeStateOk(paths),
   };
   for (const [name, ok] of Object.entries(checks)) console.log(`${ok ? "ok" : "missing"}  ${name}`);
+  if (!probe.ok) console.log(`  native_fields_roundtrip detail: ${probe.detail}`);
   if (Object.values(checks).some((ok) => !ok)) process.exitCode = 1;
 }
 
@@ -1225,7 +1262,7 @@ Usage: dscodex <command> [--port ${DEFAULT_PORT}]
   autostart enable|disable|status  run the router automatically at login
   bridge enable|disable|status  opt-in app-server bridge (provider effort memory; may degrade Computer Use)
   status      show router state
-  doctor      verify catalog, routing, key, and app-server bridge state
+  doctor      verify catalog, routing, key, native-field probe, and app-server bridge state
   stop        stop the background router
   uninstall   remove only DSCodex-owned Codex configuration
 
