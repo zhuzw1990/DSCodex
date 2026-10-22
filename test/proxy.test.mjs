@@ -78,6 +78,7 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
       stream: true,
       metadata: { unsupported: true },
       previous_response_id: "unsupported",
+      stream_options: { include_usage: true },
       input: [
         { id: "msg_1", type: "agent_message", content: "prior answer" },
         { id: "call_1", type: "function_call_output", call_id: "call_7", output: "done" },
@@ -99,6 +100,9 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
     assert.deepEqual(request.body.reasoning, { effort: "max" });
     assert.equal(request.body.store, false);
     assert.equal("previous_response_id" in request.body, false);
+    // OpenCode Go answers a portable DeepSeek request carrying stream_options
+    // with a misleading 503, so the field must never reach the upstream.
+    assert.equal("stream_options" in request.body, false);
     assert.equal("metadata" in request.body, false);
     assert.deepEqual(request.body.input[0], { type: "message", role: "user", content: "prior answer" });
     assert.deepEqual(request.body.input[1], { type: "function_call_output", call_id: "call_7", output: "done" });

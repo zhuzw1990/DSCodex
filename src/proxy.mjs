@@ -346,6 +346,11 @@ export function buildDeepSeekBody(input, { compactionSecret = "" } = {}) {
   delete body.reasoning.context;
   delete body.previous_response_id;
   delete body.conversation;
+  // OpenCode Go only accepts stream_options on a native Responses target. For
+  // DeepSeek it routes through a portable adapter that answers any request
+  // carrying this field with a 503 "Endpoint is unavailable", which looks like
+  // an outage but is a schema rejection. Codex 26.x sends it, so drop it.
+  delete body.stream_options;
   delete body.background;
   delete body.metadata;
   delete body.service_tier;
