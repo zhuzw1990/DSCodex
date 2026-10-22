@@ -176,6 +176,51 @@ export function migrateLegacyStoredKey(keyFile) {
   return true;
 }
 
+// macOS keeps the key out of the config file entirely: the item lives in the
+// login keychain and only `security` can read it, so a copied config.json (or a
+// Time Machine snapshot of it) no longer exposes the API key.
+const KEYCHAIN_SERVICE = "dscodex-deepseek";
+const KEYCHAIN_ACCOUNT = "deepseek";
+
+export function readKeychainKey() {
+  if (process.platform !== "darwin") return "";
+  try {
+    return execFileSync("/usr/bin/security", [
+      "find-generic-password",
+      "-s", KEYCHAIN_SERVICE,
+      "-a", KEYCHAIN_ACCOUNT,
+      "-w",
+    ], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  } catch {
+    return "";
+  }
+}
+
+export function writeKeychainKey(key) {
+  const trimmed = key.trim();
+  if (!trimmed) throw new Error("Empty DeepSeek API key");
+  // `-i` keeps the secret out of the process list.
+  const script = `add-generic-password -a ${KEYCHAIN_ACCOUNT} -s ${KEYCHAIN_SERVICE} -w ${trimmed} -U\n`;
+  execFileSync("/usr/bin/security", ["-i"], {
+    input: script,
+    encoding: "utf8",
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+}
+
+export function deleteKeychainKey() {
+  if (process.platform !== "darwin") return;
+  try {
+    execFileSync("/usr/bin/security", [
+      "delete-generic-password",
+      "-s", KEYCHAIN_SERVICE,
+      "-a", KEYCHAIN_ACCOUNT,
+    ], { stdio: "ignore" });
+  } catch {
+    // Nothing stored: deleting is idempotent.
+  }
+}
+
 export function deleteStoredKey(keyFile) {
   const config = configForWrite(keyFile);
   delete config[FIELD];

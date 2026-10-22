@@ -25,10 +25,13 @@ import {
   uninstall,
 } from "./config.mjs";
 import {
+  deleteKeychainKey,
   deleteStoredKey,
+  readKeychainKey,
   readProxyUrl,
   readRouterToken,
   readStoredKey,
+  writeKeychainKey,
   writeProxyUrl,
   writeStoredKey,
 } from "./keys.mjs";
@@ -240,6 +243,8 @@ function launchctlKey() {
 // legacy macOS login-session value so installs created before `key set` keep working.
 function resolveDeepSeekKey(env = process.env, keyFile = "") {
   if (env.DEEPSEEK_API_KEY?.trim()) return env.DEEPSEEK_API_KEY.trim();
+  const fromKeychain = readKeychainKey();
+  if (fromKeychain) return fromKeychain;
   const stored = keyFile ? readStoredKey(keyFile) : "";
   if (stored) return stored;
   return launchctlKey();
@@ -255,6 +260,7 @@ function requireProxyRuntime(paths, env = process.env) {
 
 function keySource(keyFile, env = process.env) {
   if (env.DEEPSEEK_API_KEY?.trim()) return "environment";
+  if (readKeychainKey()) return "macOS Keychain (service dscodex-deepseek)";
   if (readStoredKey(keyFile)) return `stored in ${keyFile}`;
   if (launchctlKey()) return "macOS launchctl login session";
   return "";
@@ -1125,14 +1131,22 @@ async function status(port) {
 async function manageKey(subcommand, paths, port) {
   if (subcommand === "set") {
     const key = process.env.DEEPSEEK_API_KEY?.trim() || launchctlKey() || await promptSecret("DeepSeek API Key: ");
-    writeStoredKey(paths.keyFile, key);
-    console.log(`Stored DeepSeek API key in ${paths.keyFile} (${process.platform === "win32" ? "DPAPI-encrypted" : "mode 0600"})`);
+    if (process.platform === "darwin") {
+      writeKeychainKey(key);
+      // A key that used to sit in the config file must not stay there.
+      deleteStoredKey(paths.keyFile);
+      console.log("Stored DeepSeek API key in the macOS Keychain (service dscodex-deepseek)");
+    } else {
+      writeStoredKey(paths.keyFile, key);
+      console.log(`Stored DeepSeek API key in ${paths.keyFile} (${process.platform === "win32" ? "DPAPI-encrypted" : "mode 0600"})`);
+    }
     if (await health(port, readRouterToken(paths.keyFile))) console.log("Restart the router (stop && start) so the running server picks up the new key");
     return;
   }
   if (subcommand === "delete") {
     deleteStoredKey(paths.keyFile);
-    console.log(`Removed the stored DeepSeek API key from ${paths.keyFile}`);
+    deleteKeychainKey();
+    console.log("Removed the stored DeepSeek API key (config file and macOS Keychain)");
     if (await health(port, readRouterToken(paths.keyFile))) console.log("Restart the router (stop && start) to drop the in-memory key");
     return;
   }
