@@ -54,7 +54,7 @@ test("catalog backfills newly required fields on stale native cache entries", ()
 test("catalog exposes one whale-labelled Flash entry", () => {
   const catalog = buildCatalog({ models: [TEMPLATE] });
   const expected = [
-    ["deepseek/deepseek-flash", "🐳 DeepSeek Flash", "DeepSeek V4.1 Flash"],
+    ["deepseek/deepseek-flash", "🐳 DeepSeek V4.1 Flash (Go)", "DeepSeek V4.1 Flash"],
   ];
   for (const [slug, displayName, productName] of expected) {
     const model = catalog.models.find((candidate) => candidate.slug === slug);
