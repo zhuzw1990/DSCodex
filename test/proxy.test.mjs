@@ -63,11 +63,12 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
   t.after(async () => { await close(proxy); await close(upstream); });
 
   for (const [pickerModel, wireModel] of [
-    ["deepseek/deepseek-flash", "deepseek-flash"],
-    ["deepseek-flash", "deepseek-flash"],
-    ["deepseek/deepseek-v4-flash", "deepseek-flash"],
-    ["deepseek/deepseek-v4-pro", "deepseek-flash"],
-    ["deepseek-v4-pro", "deepseek-flash"],
+    ["deepseek/deepseek-flash", "deepseek-v4.1-flash"],
+    ["deepseek-flash", "deepseek-v4.1-flash"],
+    ["deepseek/deepseek-v4-flash", "deepseek-v4.1-flash"],
+    ["deepseek/deepseek-v4-pro", "deepseek-v4.1-flash"],
+    ["deepseek-v4-pro", "deepseek-v4.1-flash"],
+    ["ark-code-latest", "deepseek-v4.1-flash"],
   ]) {
     const codexBody = zstdCompressSync(JSON.stringify({
       model: pickerModel,
@@ -268,13 +269,13 @@ test("adapts Codex remote compaction v2 to a DeepSeek summary and restores it on
   const compactItem = events.find((event) => event.type === "response.output_item.done")?.item;
   const completed = events.find((event) => event.type === "response.completed")?.response;
   assert.equal(compactItem?.type, "compaction");
-  assert.equal(completed?.model, "deepseek-flash");
+  assert.equal(completed?.model, "deepseek-v4.1-flash");
   assert.match(compactItem.encrypted_content, /^dscodex-compaction-v1:/);
   assert.equal(compactItem.encrypted_content.includes(summary), false);
   assert.equal(observed[0].input.some((item) => item.type === "compaction_trigger"), false);
   assert.equal("tools" in observed[0], false);
   assert.equal("parallel_tool_calls" in observed[0], false);
-  assert.equal(observed[0].model, "deepseek-flash");
+  assert.equal(observed[0].model, "deepseek-v4.1-flash");
   assert.match(observed[0].input.at(-1).content[0].text, /compact handoff summary/i);
 
   const replayResponse = await fetch(route(proxyUrl), {

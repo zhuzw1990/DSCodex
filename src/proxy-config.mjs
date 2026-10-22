@@ -2,13 +2,16 @@
 //
 // Node's global fetch (undici) ignores HTTP_PROXY / HTTPS_PROXY by default, so
 // on networks where chatgpt.com is only reachable through a proxy the router
-// would otherwise fail every GPT passthrough with ECONNRESET while DeepSeek
-// (a directly reachable host) keeps working. The router therefore resolves a
-// proxy explicitly and re-execs itself with --use-env-proxy so both the GPT
-// passthrough uses it, while NO_PROXY keeps
-// loopback and api.deepseek.com direct.
+// would otherwise fail every GPT passthrough with ECONNRESET while the model
+// upstream (a directly reachable host) keeps working. The router therefore
+// resolves a proxy explicitly and re-execs itself with --use-env-proxy so both
+// the GPT passthrough uses it, while NO_PROXY keeps loopback and the model
+// upstreams direct.
+//
+// opencode.ai is the OpenCode Go gateway; it is reachable directly on this
+// network, and routing it through a proxy only adds latency and TLS failures.
 
-const DIRECT_NO_PROXY = ["127.0.0.1", "localhost", "::1", "api.deepseek.com"];
+const DIRECT_NO_PROXY = ["127.0.0.1", "localhost", "::1", "api.deepseek.com", "opencode.ai"];
 
 const PROXY_ENV_NAMES = [
   "DSCODEX_HTTPS_PROXY",

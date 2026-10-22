@@ -5,32 +5,41 @@ export const VERSION = "1.4.0";
 export const DEFAULT_PORT = 10110;
 export const HOST = "127.0.0.1";
 export const DEEPSEEK_MODELS = Object.freeze([
+  // Keep the picker slug stable so resumed tasks and Codex's cached model
+  // settings keep resolving; only the wire name follows the provider.
   Object.freeze({
-    pickerSlug: "deepseek/ark-code-latest",
-    wireModel: "ark-code-latest",
-    displayName: "🌋 火山智能路由 (Auto)",
-    productName: "火山方舟智能路由",
+    pickerSlug: "deepseek/deepseek-flash",
+    wireModel: "deepseek-v4.1-flash",
+    displayName: "🐳 DeepSeek Flash",
+    productName: "DeepSeek V4.1 Flash",
   }),
+  // Adding a second OpenCode Go model later is one more frozen entry here:
+  // OpenCode Go serves gpt-6-luna on the same Responses wire, e.g.
+  // { pickerSlug: "deepseek/gpt-6-luna", wireModel: "gpt-6-luna",
+  //   displayName: "🌙 GPT-6 Luna (Go)", productName: "GPT-6 Luna" }
 ]);
 
 // Keep resumed tasks and user-owned model settings routable after migration.
-// deepseek-v4-1-flash is retired but still present in Codex's models_cache.json:
-// without it here that stale entry would be treated as a native model and shown
-// as a broken picker item, so keep it mapped onto the current entry.
+// Every retired wire name maps onto the current Flash entry, otherwise a stale
+// entry in Codex's models_cache.json is treated as a native model and shows up
+// as a broken picker item.
 const LEGACY_DEEPSEEK_MODELS = new Set([
   "deepseek-v4-flash", "deepseek-v4-pro", "deepseek-v4-flash-vision-exp",
-  "deepseek-v4-1-flash",
+  "deepseek-v4-1-flash", "deepseek-flash", "ark-code-latest",
 ]);
-export const DEEPSEEK_BASE_URL = "https://ark.cn-beijing.volces.com/api/coding/v3";
+export const DEEPSEEK_BASE_URL = "https://opencode.ai/zen/go/v1";
+// OpenCode Go refuses requests without this header (HTTP 400 MissingSessionID)
+// and uses it to pin one conversation to one upstream for prompt-cache warmth.
+export const OPENCODE_SESSION_HEADER = "x-opencode-session";
 export const CHATGPT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex";
 export const MANAGED_MARKER = "# DSCodex managed; remove with `dscodex uninstall`";
 
 export function deepSeekModelFor(model) {
   if (typeof model !== "string") return null;
   const wireModel = model.startsWith("deepseek/") ? model.slice("deepseek/".length) : model;
-  return wireModel === DEEPSEEK_MODELS[0].wireModel || LEGACY_DEEPSEEK_MODELS.has(wireModel)
-    ? DEEPSEEK_MODELS[0]
-    : null;
+  const exact = DEEPSEEK_MODELS.find((entry) => entry.wireModel === wireModel);
+  if (exact) return exact;
+  return LEGACY_DEEPSEEK_MODELS.has(wireModel) ? DEEPSEEK_MODELS[0] : null;
 }
 
 export function resolveCodexHome(env = process.env) {

@@ -57,6 +57,7 @@ test("proxyEnvFor sets proxy env, loopback NO_PROXY, and the env-proxy flag", ()
   assert.ok(env.NO_PROXY.includes("localhost"));
   assert.ok(env.NO_PROXY.includes("example.com"));
   assert.ok(env.NO_PROXY.includes("api.deepseek.com"));
+  assert.ok(env.NO_PROXY.includes("opencode.ai"));
   assert.equal(env.no_proxy, env.NO_PROXY);
   assert.equal(env.NODE_OPTIONS, "--max-old-space-size=512 --use-env-proxy");
   const existingFlag = proxyEnvFor("http://127.0.0.1:10808", {

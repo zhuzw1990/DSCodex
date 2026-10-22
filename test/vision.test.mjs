@@ -54,9 +54,10 @@ for (const authorization of [undefined, "Bearer private-chatgpt-token"]) {
       });
       assert.equal(response.status, 200);
       await response.text();
-      assert.equal(received.at(-1).body.model, "deepseek-flash");
+      assert.equal(received.at(-1).body.model, "deepseek-v4.1-flash");
       assert.deepEqual(received.at(-1).body.input, input);
       assert.equal(received.at(-1).headers.authorization, "Bearer test-key");
+      assert.ok(received.at(-1).headers["x-opencode-session"], "OpenCode Go needs a session id");
     }
     assert.equal(gptCalls, 0);
   });

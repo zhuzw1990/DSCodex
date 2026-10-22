@@ -13,6 +13,7 @@ import { buildCatalog } from "./catalog.mjs";
 import {
   CHATGPT_CODEX_BASE_URL,
   DEEPSEEK_BASE_URL,
+  OPENCODE_SESSION_HEADER,
   deepSeekModelFor,
 } from "./constants.mjs";
 import {
@@ -552,6 +553,21 @@ function copyRequestHeaders(request, deepSeekKey) {
   return headers;
 }
 
+// OpenCode Go rejects a request without a session id (HTTP 400 MissingSessionID)
+// and keys both upstream routing and its prompt cache on the value, so it has to
+// stay stable for one conversation and differ between conversations. Codex
+// resends the whole history every turn, which makes the first input turn a
+// stable fingerprint for the session.
+function openCodeSessionFor(body, request) {
+  const hinted = request.headers["session_id"]
+    ?? request.headers["x-session-id"]
+    ?? request.headers["x-opencode-session"];
+  const candidate = Array.isArray(hinted) ? hinted[0] : hinted;
+  if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  const seed = JSON.stringify(body?.input?.[0] ?? body?.instructions ?? "");
+  return `dscodex-${createHash("sha256").update(seed).digest("hex").slice(0, 32)}`;
+}
+
 function copyResponseHeaders(upstream, response) {
   for (const [name, value] of upstream.headers) {
     if (!HOP_BY_HOP_HEADERS.has(name)) response.setHeader(name, value);
@@ -789,6 +805,7 @@ export function createProxyServer({
       const baseUrl = deepSeek ? deepSeekBaseUrl : chatGptBaseUrl;
       const target = new URL(`${baseUrl.replace(/\/$/, "")}${upstreamPath(pathname)}${url.search}`);
       const headers = copyRequestHeaders(request, deepSeek ? deepSeekKey : undefined);
+      if (deepSeek) headers.set(OPENCODE_SESSION_HEADER, openCodeSessionFor(parsed, request));
       if (!rewrittenBody && request.headers["content-encoding"]) {
         headers.set("content-encoding", request.headers["content-encoding"]);
       }
