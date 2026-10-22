@@ -638,6 +638,39 @@ function upstreamPath(pathname) {
   return pathname.startsWith("/v1/") ? pathname.slice(3) : pathname;
 }
 
+// The OpenCode gateway answers 502/503/504 for short edge hiccups (and reset
+// sockets outright) that clear up within a second or two, so a single failed
+// fetch used to surface in Codex as a wall of retries. Responses bodies are
+// stateless here (store is forced false), so replaying the exact bytes is safe.
+const TRANSIENT_UPSTREAM_STATUS = new Set([502, 503, 504]);
+const UPSTREAM_RETRY_DELAYS_MS = [400, 1200];
+
+async function fetchUpstream(target, init, logger) {
+  const attempts = UPSTREAM_RETRY_DELAYS_MS.length + 1;
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const upstream = await fetch(target, init);
+      if (!TRANSIENT_UPSTREAM_STATUS.has(upstream.status) || attempt === attempts) return upstream;
+      logger.info?.(`upstream ${upstream.status} on ${target.pathname}, retrying (${attempt}/${attempts - 1})`);
+      try {
+        await upstream.body?.cancel();
+      } catch {
+        // The body is already gone; nothing left to release.
+      }
+    } catch (error) {
+      if (init.signal?.aborted) throw error;
+      lastError = error;
+      if (attempt === attempts) throw error;
+      logger.info?.(
+        `upstream fetch failed (${error instanceof Error ? error.message : String(error)}), retrying (${attempt}/${attempts - 1})`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, UPSTREAM_RETRY_DELAYS_MS[attempt - 1]));
+  }
+  throw lastError ?? new Error("upstream request failed");
+}
+
 export function createProxyServer({
   deepSeekKey = process.env.DEEPSEEK_API_KEY,
   deepSeekBaseUrl = DEEPSEEK_BASE_URL,
@@ -817,13 +850,13 @@ export function createProxyServer({
       response.on("close", () => {
         if (!response.writableFinished) controller.abort();
       });
-      const upstream = await fetch(target, {
+      const upstream = await fetchUpstream(target, {
         method: "POST",
         headers,
         body: outgoingBody,
         redirect: "manual",
         signal: controller.signal,
-      });
+      }, logger);
       if (compactionRequest && upstream.ok) {
         const upstreamText = await upstream.text();
         const { summary, usage } = parseCompactionUpstream(upstreamText);
@@ -841,6 +874,17 @@ export function createProxyServer({
       response.statusMessage = upstream.statusText;
       copyResponseHeaders(upstream, response);
       logger.info?.(`${deepSeek ? "deepseek" : "chatgpt"} ${pathname} -> ${upstream.status} ${Date.now() - startedAt}ms`);
+      // A status code alone cannot distinguish "your key is wrong", "this model
+      // is not served on this wire" and "the gateway is briefly down", so record
+      // what the upstream actually said before the body is streamed onwards.
+      if (!upstream.ok && upstream.body) {
+        try {
+          const detail = (await upstream.clone().text()).slice(0, 800).replace(/\s+/g, " ");
+          logger.info?.(`upstream ${upstream.status} body: ${detail}`);
+        } catch (error) {
+          logger.info?.(`upstream ${upstream.status} body unreadable: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
       if (!upstream.body) {
         response.end();
         return;

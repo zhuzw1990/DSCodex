@@ -10,7 +10,7 @@ export const DEEPSEEK_MODELS = Object.freeze([
   Object.freeze({
     pickerSlug: "deepseek/deepseek-flash",
     wireModel: "deepseek-v4.1-flash",
-    displayName: "🐳 DeepSeek Flash",
+    displayName: "🐳 DeepSeek V4.1 Flash (Go)",
     productName: "DeepSeek V4.1 Flash",
   }),
   // Adding a second OpenCode Go model later is one more frozen entry here:
