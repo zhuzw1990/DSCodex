@@ -47,7 +47,7 @@ for (const authorization of [undefined, "Bearer private-chatgpt-token"]) {
       { type: "custom_tool_call", call_id: "call_2", name: "image", input: "image" },
       { type: "custom_tool_call_output", call_id: "call_2", output: [{ type: "input_image", image_url: IMAGE }] },
     ];
-    for (const model of ["deepseek/deepseek-flash", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]) {
+    for (const model of ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro"]) {
       const response = await fetch(`${url}/${ROUTER_TOKEN}/v1/responses`, {
         method: "POST", headers: { "content-type": "application/json", ...(authorization ? { authorization } : {}) },
         body: JSON.stringify({ model, input }),

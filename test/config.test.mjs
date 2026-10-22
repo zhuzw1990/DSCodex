@@ -46,7 +46,7 @@ test("catalog backfills newly required fields on stale native cache entries", ()
   assert.equal(native.supports_reasoning_summaries, false);
   assert.equal(native.prefer_websockets, true);
   assert.equal(native.base_instructions, TEMPLATE.model_messages.instructions_template);
-  const deepseek = catalog.models.find((model) => model.slug === "deepseek/deepseek-flash");
+  const deepseek = catalog.models.find((model) => model.slug === "deepseek/deepseek-v4.1-flash");
   assert.equal(deepseek.supports_reasoning_summaries, false);
   assert.equal(deepseek.base_instructions, "You are Codex, powered by DeepSeek V4.1 Flash.");
 });
@@ -54,7 +54,7 @@ test("catalog backfills newly required fields on stale native cache entries", ()
 test("catalog exposes one whale-labelled Flash entry", () => {
   const catalog = buildCatalog({ models: [TEMPLATE] });
   const expected = [
-    ["deepseek/deepseek-flash", "🐳 DeepSeek V4.1 Flash (Go)", "DeepSeek V4.1 Flash"],
+    ["deepseek/deepseek-v4.1-flash", "🐳 DeepSeek V4.1 Flash (Go)", "DeepSeek V4.1 Flash"],
   ];
   for (const [slug, displayName, productName] of expected) {
     const model = catalog.models.find((candidate) => candidate.slug === slug);
@@ -385,10 +385,10 @@ test("stripBridgeCliPath with no owned values is a no-op", () => {
 
 test("catalog removes cached legacy entries without duplicating Flash", () => {
   const catalog = buildCatalog({ models: [TEMPLATE,
-    ...["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro", "deepseek/deepseek-flash", "deepseek-v4-flash-vision-exp"]
+    ...["deepseek/deepseek-v4-flash", "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash", "deepseek-v4-flash-vision-exp"]
       .map((slug) => ({ ...TEMPLATE, slug })),
   ] });
-  assert.deepEqual(catalog.models.map((model) => model.slug), ["deepseek/deepseek-flash", TEMPLATE.slug]);
+  assert.deepEqual(catalog.models.map((model) => model.slug), ["deepseek/deepseek-v4.1-flash", TEMPLATE.slug]);
   assert.throws(() => buildCatalog({ models: [{ ...TEMPLATE, slug: "deepseek/deepseek-v4-pro" }] }), /no native model template/);
 });
 
@@ -402,7 +402,7 @@ test("catalog readiness rejects native-only and partially merged catalogs", () =
     models: catalog.models.filter((model) => !model.slug.startsWith("deepseek/")),
   };
   const missingFlash = {
-    models: catalog.models.filter((model) => model.slug !== "deepseek/deepseek-flash"),
+    models: catalog.models.filter((model) => model.slug !== "deepseek/deepseek-v4.1-flash"),
   };
 
   assert.equal(isCatalogReady(nativeOnly), false);

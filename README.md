@@ -42,7 +42,7 @@
 
 ## 当前模型：DeepSeek V4.1 Flash
 
-模型菜单只有一条 `🐳 DeepSeek Flash`，API 名 `deepseek-flash`，对应 **DeepSeek V4.1 Flash**：1M 上下文、最高 384K 输出、原生视觉、Responses API 工具调用。旧的 `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp` 名称仍可路由，恢复旧任务不需要改模型设置。
+模型菜单只有一条 `🐳 DeepSeek V4.1 Flash (Go)`，模型名 `deepseek/deepseek-v4.1-flash`，对应 **DeepSeek V4.1 Flash**：1M 上下文、最高 384K 输出、原生视觉、Responses API 工具调用。菜单里**只显示当前版本**；退役的 `deepseek-flash` / `deepseek-v4-flash` / `deepseek-v4-pro` / `deepseek-v4-flash-vision-exp` 仍可路由（旧任务不用改设置），但不会出现在选择器里。上游发新版本时改 `src/constants.mjs` 的 `pickerSlug` + `wireModel` 两行，把旧名加进 `LEGACY_DEEPSEEK_MODELS`，再跑 `dscodex sync`。
 
 官方牌价（每百万 token，高峰期）：缓存命中输入 **$0.006**、未命中输入 **$0.30**、输出 **$1.20**，低谷期减半。DeepSeek 计划于 **2026-09-14 12:00（北京时间）**起把 V4 Pro 请求转到 V4.1 Flash 并按 Flash 计费。「全面超过 V4 Pro」是官方测试结论，本项目未做独立评测。能力与价格以[官方模型说明](https://api-docs.deepseek.com/quick_start/pricing/)为准。
 
@@ -95,7 +95,7 @@ node src/cli.mjs autostart enable   # 可选：登录自启，路由崩溃后自
 CLI 用 `-m` 选模型，用 `-c` 显式指定档位（不写则由 Codex 自己的默认档位经上表折算）：
 
 ```bash
-codex -m deepseek/deepseek-flash -c 'model_reasoning_effort="max"'
+codex -m deepseek/deepseek-v4.1-flash -c 'model_reasoning_effort="max"'
 ```
 
 全部命令：`install` `sync` `key set|status|delete` `proxy set|status|clear` `start` `serve`
@@ -165,7 +165,7 @@ ChatGPT 桌面端 26.908+ 会先连 `ws://127.0.0.1:10110/<token>/v1/responses`�
 
 - **用量统计。** Codex 的 Profile 页面只读，DeepSeek 用量无法计入。
 - **思考块反复折叠。** DeepSeek 每轮工具调用结束都发 `response.completed`，Codex 随之折叠思考、执行工具、再展开下一轮。这是 API 行为，不是 bug；无工具的单轮只折叠一次。
-- **原生识图。** 图片和工具返回的图片直接交给 `deepseek-flash`，不再借 GPT 代读；`DSCODEX_VISION_MODEL` 不再生效。
+- **原生识图。** 图片和工具返回的图片直接交给 `deepseek/deepseek-v4.1-flash`，不再借 GPT 代读；`DSCODEX_VISION_MODEL` 不再生效。
 - **单次请求体积。** Codex 每轮重发整段历史，图片以 base64 常驻且不会变小，长会话迟早撞上 DeepSeek 网关约 47 MB 的请求上限，表现是那段会话每轮都回 HTML `413 Payload Too Large`，重试无用。路由器在出站请求超过 44 MB 时**把老图改小而不是删掉**：除最新 4 张外，全部转成 **有损 WebP**（长边 1024、质量 75）。实测一段 44 张图的真实会话：图片从 47.92 MB 降到 10.1 MB，整个请求 50.67 → 12.88 MB，**一张都没丢**，模型照样读得出骰子面数和上面的数字。只有连缩图都压不下去时才会真的丢图，且必留一条写明「第几张、什么类型、多大」的记录。转码结果按内容哈希缓存在 `~/.codex/dscodex/image-cache/`，所以同一张图只在第一次编码。**编码器是「找到就用」，不是依赖**：DSCodex 对外仍然只承诺 `ws` 一个运行依赖，`npm install` 不会因此多装东西。想要缩图能力，把编码器放到 `~/.codex/dscodex/encoders` 即可（`npm install --prefix ~/.codex/dscodex/encoders sharp`，或用 `webp_encoder_dir` 指到别处）；没放就自动退回记录方式——全新克隆只会慢一点，不会坏。五个旋钮 `max_upstream_bytes` / `keep_recent_images` / `image_max_side` / `webp_quality` / `webp_encoder_dir` 写进 `~/.codex/dscodex/config.json` 即生效，重启路由器后读取；`max_upstream_bytes: 0` 完全关闭压缩。注意自启动的路由器**读不到**你在某个 shell 里临时设的变量，改写配置文件才行。
 - **DeepSeek → GPT 任务历史。** 转发 GPT 前剥掉外来 reasoning（带 `reasoning_text` 内容，或 `encrypted_content` 非 ChatGPT 密文；DeepSeek 现在会填一个 UUID 占位串，见 #23），把 DSCodex 自己的加密压缩摘要恢复为助手上下文；GPT 原生 reasoning 与普通请求保持原始字节，rollout 文件不改写。HTTP SSE 与每条 Responses WebSocket `response.create` 都做这件事。
 - **子 agent。** 发给 DeepSeek 的 `agent_message` 以 `user` 角色重放，`encrypted_content` 等 DeepSeek 不认识的内容块改写成 `input_text`，spawn 子 agent 不再 422 / 400（#24）。

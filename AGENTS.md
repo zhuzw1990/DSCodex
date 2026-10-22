@@ -22,9 +22,9 @@ The non-negotiable details:
 4. The ChatGPT desktop app must be fully quit (`⌘Q`) and relaunched, and the user must start a NEW
    task to see `🐳 DeepSeek Flash`. Existing tasks keep their old model state.
 5. Verify Flash with a real tool loop:
-   `codex -m deepseek/deepseek-flash -c 'model_reasoning_effort="max"' -a never exec --skip-git-repo-check 'call a shell tool exactly once …'`.
+   `codex -m deepseek/deepseek-v4.1-flash -c 'model_reasoning_effort="max"' -a never exec --skip-git-repo-check 'call a shell tool exactly once …'`.
    The legacy identifiers `deepseek-v4-flash`, `deepseek-v4-pro`, and `deepseek-v4-flash-vision-exp`
-   must keep routing to `deepseek-flash` so resumed tasks still work.
+   must keep routing to `deepseek/deepseek-v4.1-flash`; the retired `deepseek-flash` slug is filtered out of the picker but still routes, so resumed tasks keep working.
 6. Do not edit `~/.codex/config.toml` by hand unless the user asks. The CLI owns exactly one
    marker-owned root key, `openai_base_url`. GUI-written `model` / `model_reasoning_effort` lines
    are user-owned and must be preserved. Codex rewrites the file and can drop the marker comment,
@@ -41,7 +41,7 @@ The non-negotiable details:
 
 ## Model, effort, and vision
 
-7. The single catalog entry is `deepseek-flash` (DeepSeek V4.1 Flash) with native vision. Forward
+7. The single catalog entry is `deepseek/deepseek-v4.1-flash` (DeepSeek V4.1 Flash) with native vision. Forward
    `input_image` parts in messages and in tool outputs directly to DeepSeek. The entry keeps
    `input_modalities = ["text", "image"]` so the desktop app may issue `view_image` calls. GPT
    image descriptions and `DSCODEX_VISION_MODEL` are not used by the router.

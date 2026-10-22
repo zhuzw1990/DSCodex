@@ -63,6 +63,9 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
   t.after(async () => { await close(proxy); await close(upstream); });
 
   for (const [pickerModel, wireModel] of [
+    ["deepseek/deepseek-v4.1-flash", "deepseek-v4.1-flash"],
+    // The retired picker slug still routes (resumed tasks keep working) but is
+    // filtered out of the picker, so it must never show up again.
     ["deepseek/deepseek-flash", "deepseek-v4.1-flash"],
     ["deepseek-flash", "deepseek-v4.1-flash"],
     ["deepseek/deepseek-v4-flash", "deepseek-v4.1-flash"],
@@ -130,7 +133,7 @@ test("forwards an inter-agent task message as text instead of an encrypted_conte
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      model: "deepseek/deepseek-flash",
+      model: "deepseek/deepseek-v4.1-flash",
       stream: true,
       input: [{
         id: "amsg_1",
@@ -187,7 +190,7 @@ test("never forwards a content block DeepSeek cannot deserialize", async (t) => 
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      model: "deepseek/deepseek-flash",
+      model: "deepseek/deepseek-v4.1-flash",
       stream: true,
       input: [
         { type: "message", role: "assistant", content: [{ type: "refusal", refusal: "I cannot help with that." }] },
@@ -983,7 +986,7 @@ test("websocketTarget rewrites the Codex responses path onto chatgpt.com", () =>
 
 test("requestModel reads nested Codex websocket envelopes", () => {
   assert.equal(requestModel({ model: "gpt-6-astra" }), "gpt-6-astra");
-  assert.equal(requestModel({ payload: { model: "deepseek/deepseek-flash" } }), "deepseek/deepseek-flash");
+  assert.equal(requestModel({ payload: { model: "deepseek/deepseek-v4.1-flash" } }), "deepseek/deepseek-v4.1-flash");
   assert.equal(requestModel({ response: { model: "gpt-5.6-sol" } }), "gpt-5.6-sol");
   assert.equal(requestModel(null), undefined);
 });
@@ -1076,7 +1079,7 @@ test("DeepSeek websocket attempts are closed so the client falls back to HTTP", 
   await opened;
   client.send(JSON.stringify({
     type: "response.create",
-    model: "deepseek/deepseek-flash",
+    model: "deepseek/deepseek-v4.1-flash",
     input: [],
   }));
   const [code] = await once(client, "close");
@@ -1233,7 +1236,7 @@ test("second websocket turn still strips foreign reasoning and rejects DeepSeek"
   ]);
   client.send(JSON.stringify({
     type: "response.create",
-    model: "deepseek/deepseek-flash",
+    model: "deepseek/deepseek-v4.1-flash",
     input: [{ type: "message", role: "user", content: "three" }],
   }));
   const [code] = await once(client, "close");
@@ -1261,8 +1264,8 @@ test("upstream connect refusal closes the Codex websocket with 1011", async (t) 
 
 test("routingHintModel reads the model from the Codex routing hint header", () => {
   assert.equal(
-    routingHintModel({ headers: { "x-codex-routing-hint": "model=deepseek/deepseek-flash;tier=priority" } }),
-    "deepseek/deepseek-flash",
+    routingHintModel({ headers: { "x-codex-routing-hint": "model=deepseek/deepseek-v4.1-flash;tier=priority" } }),
+    "deepseek/deepseek-v4.1-flash",
   );
   assert.equal(
     routingHintModel({ headers: { "x-codex-routing-hint": "model=gpt-5.6-sol" } }),
@@ -1370,7 +1373,7 @@ test("serves the live ChatGPT model list with Flash merged in", async (t) => {
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("etag"), 'W/"live"');
   const { models } = await response.json();
-  assert.deepEqual(models.map((model) => model.slug), ["deepseek/deepseek-flash", "gpt-6-luna", "gpt-5.5"]);
+  assert.deepEqual(models.map((model) => model.slug), ["deepseek/deepseek-v4.1-flash", "gpt-6-luna", "gpt-5.5"]);
   assert.equal(seen.length, 1);
   assert.equal(seen[0].url, "/backend-api/codex/models?client_version=0.155.0");
   assert.equal(seen[0].headers.authorization, "Bearer chatgpt-oauth");
@@ -1395,12 +1398,12 @@ test("falls back to the last good model list when ChatGPT is unreachable or fail
     response.writeHead(503);
     response.end("down");
   });
-  const fallback = [{ ...NATIVE_MODEL, slug: "deepseek/deepseek-flash" }, NATIVE_MODEL];
+  const fallback = [{ ...NATIVE_MODEL, slug: "deepseek/deepseek-v4.1-flash" }, NATIVE_MODEL];
   for (const chatGptBaseUrl of [upstreamUrl, "http://127.0.0.1:9/backend-api/codex"]) {
     const proxyUrl = await modelsProxy(t, { chatGptBaseUrl, models: fallback });
     const response = await fetch(route(proxyUrl, "/v1/models?client_version=0.155.0"));
     assert.equal(response.status, 200);
-    assert.deepEqual((await response.json()).models.map((model) => model.slug), ["deepseek/deepseek-flash", "gpt-6-luna"]);
+    assert.deepEqual((await response.json()).models.map((model) => model.slug), ["deepseek/deepseek-v4.1-flash", "gpt-6-luna"]);
   }
   const bare = await modelsProxy(t, { chatGptBaseUrl: upstreamUrl });
   assert.equal((await fetch(route(bare, "/v1/models"))).status, 502);
@@ -1409,7 +1412,7 @@ test("falls back to the last good model list when ChatGPT is unreachable or fail
 function imageBody(imageCount, bytesPerImage) {
   const filler = "A".repeat(bytesPerImage);
   return {
-    model: "deepseek/deepseek-flash",
+    model: "deepseek/deepseek-v4.1-flash",
     input: Array.from({ length: imageCount }, (_, index) => ({
       type: "function_call_output",
       call_id: `call-${index}`,

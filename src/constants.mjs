@@ -5,10 +5,13 @@ export const VERSION = "1.4.0";
 export const DEFAULT_PORT = 10110;
 export const HOST = "127.0.0.1";
 export const DEEPSEEK_MODELS = Object.freeze([
-  // Keep the picker slug stable so resumed tasks and Codex's cached model
-  // settings keep resolving; only the wire name follows the provider.
+  // The picker slug carries the upstream version on purpose: the model menu
+  // must never show a stale or generic name. Upgrading the model is these two
+  // lines (pickerSlug + wireModel) plus a `dscodex sync`; the retired slug goes
+  // into LEGACY_DEEPSEEK_MODELS below so resumed tasks keep routing without
+  // reappearing in the menu.
   Object.freeze({
-    pickerSlug: "deepseek/deepseek-flash",
+    pickerSlug: "deepseek/deepseek-v4.1-flash",
     wireModel: "deepseek-v4.1-flash",
     displayName: "🐳 DeepSeek V4.1 Flash (Go)",
     productName: "DeepSeek V4.1 Flash",
