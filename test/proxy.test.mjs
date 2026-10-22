@@ -79,6 +79,9 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
       metadata: { unsupported: true },
       previous_response_id: "unsupported",
       stream_options: { include_usage: true },
+      access_programs: [],
+      truncation: "auto",
+      safety_identifier: "user_test",
       input: [
         { id: "msg_1", type: "agent_message", content: "prior answer" },
         { id: "call_1", type: "function_call_output", call_id: "call_7", output: "done" },
@@ -103,6 +106,10 @@ test("routes Flash and legacy task aliases to the current Flash model", async (t
     // OpenCode Go answers a portable DeepSeek request carrying stream_options
     // with a misleading 503, so the field must never reach the upstream.
     assert.equal("stream_options" in request.body, false);
+    // Native-Responses-only companions get the same misleading 503.
+    assert.equal("access_programs" in request.body, false);
+    assert.equal("truncation" in request.body, false);
+    assert.equal("safety_identifier" in request.body, false);
     assert.equal("metadata" in request.body, false);
     assert.deepEqual(request.body.input[0], { type: "message", role: "user", content: "prior answer" });
     assert.deepEqual(request.body.input[1], { type: "function_call_output", call_id: "call_7", output: "done" });

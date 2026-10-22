@@ -351,6 +351,12 @@ export function buildDeepSeekBody(input, { compactionSecret = "" } = {}) {
   // carrying this field with a 503 "Endpoint is unavailable", which looks like
   // an outage but is a schema rejection. Codex 26.x sends it, so drop it.
   delete body.stream_options;
+  // Same portable-adapter trap, wider net: every native-Responses-only field the
+  // adapter does not understand is answered with a fake 503 "Endpoint is
+  // unavailable". Codex 26.x sends these, so drop them before the body leaves.
+  delete body.access_programs;
+  delete body.truncation;
+  delete body.safety_identifier;
   delete body.background;
   delete body.metadata;
   delete body.service_tier;
