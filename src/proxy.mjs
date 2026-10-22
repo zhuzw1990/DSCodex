@@ -854,7 +854,14 @@ export function createProxyServer({
       });
       stream.pipe(response);
     } catch (error) {
-      logger.error?.(`proxy error (${direction} ${pathname}): ${error instanceof Error ? error.message : String(error)}`);
+      const causes = [];
+      for (let cause = error?.cause, depth = 0; cause && depth < 4; cause = cause.cause, depth += 1) {
+        causes.push(cause.code ?? cause.name ?? cause.message ?? String(cause));
+      }
+      logger.error?.(
+        `proxy error (${direction} ${pathname}): ${error instanceof Error ? error.message : String(error)}`
+        + (causes.length ? ` [${causes.join(" <- ")}]` : ""),
+      );
       if (!response.headersSent && !response.destroyed) {
         const status = Number.isInteger(error?.statusCode) ? error.statusCode : 502;
         const message = status !== 413
