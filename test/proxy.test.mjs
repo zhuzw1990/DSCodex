@@ -360,18 +360,24 @@ test("adapts Codex remote compaction v2 to a DeepSeek summary and restores it on
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       model: "deepseek/deepseek-v4-pro",
-      input: [
-        compactItem,
-        { type: "message", role: "user", content: [{ type: "input_text", text: "Continue" }] },
-      ],
+      // Automatic compaction resumes the same turn: no new user message follows the
+      // compaction item, and tools stay enabled. A restored `assistant` summary would
+      // be read as this model's own prior thinking turn and rejected for a missing
+      // `reasoning_text`, so the summary must come back as user handoff context.
+      tools: [{ type: "function", name: "shell" }],
+      parallel_tool_calls: false,
+      input: [compactItem],
     }),
   });
   assert.equal(replayResponse.status, 200);
   await replayResponse.text();
   assert.equal(observed[1].input.some((item) => item.type === "compaction"), false);
-  const restored = observed[1].input.find((item) => item.role === "assistant");
-  assert.match(restored.content[0].text, /Compacted prior context/);
+  const restored = observed[1].input.find(
+    (item) => item.role === "user" && item.content?.[0]?.text?.includes("Compacted prior context"),
+  );
+  assert.ok(restored, "expected the compacted summary to replay as user handoff context");
   assert.match(restored.content[0].text, /tests and a restart are still pending/);
+  assert.equal(observed[1].input.some((item) => item.role === "assistant"), false);
   const gptReplay = await fetch(route(proxyUrl), {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ model: "gpt-5.6-sol", input: [compactItem] }),

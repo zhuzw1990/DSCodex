@@ -182,9 +182,15 @@ function convertInputItem(item, compactionSecret) {
   if (item.type === "compaction") {
     const summary = openCompaction(item.encrypted_content, compactionSecret);
     if (summary) {
+      // Automatic compaction resumes the same turn without a new user message, and
+      // tools stay enabled. Restoring the summary as `assistant` therefore looks like
+      // this model's own prior thinking turn with no matching `reasoning_text`, and
+      // DeepSeek rejects the continuation with "The `reasoning_text` in the thinking
+      // mode must be passed back to the API." Replay it as user handoff context, the
+      // same treatment `agent_message` gets below. (upstream PR #33)
       return {
         type: "message",
-        role: "assistant",
+        role: "user",
         content: [{ type: "input_text", text: `[Compacted prior context]\n${summary}` }],
       };
     }
