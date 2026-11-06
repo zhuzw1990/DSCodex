@@ -84,7 +84,14 @@ export function buildDeepSeekCatalogEntry(template, model = DEEPSEEK_MODELS[0]) 
   entry.multi_agent_version = "v2";
   entry.use_responses_lite = false;
   entry.include_skills_usage_instructions = false;
-  entry.context_window = 1_048_576;
+  // Codex 的自动压缩按「有效窗口 × effective_context_window_percent」触发，
+  // 所以把有效窗口声明成 500K 就等于「到 ~475K 就压」：95% => 475,000。
+  // 理由是 DeepSeek 超过 50 万 token 后成本陡增、长上下文生成质量明显下降
+  // （2026-10-23 用户决定）。模型本身的 1M 能力仍保留在 max_context_window，
+  // 想改回去只需把这两行恢复成 1_048_576。
+  // 注意：不要用 config.toml 的 model_context_window 来压它——那个键对所有
+  // 模型一起生效，会把 272K 的官方模型一并抬到 500K。
+  entry.context_window = 500_000;
   entry.max_context_window = 1_048_576;
   entry.effective_context_window_percent = 95;
   entry.auto_compact_token_limit = null;
